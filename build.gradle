@@ -24,13 +24,6 @@ dependencies {
     modImplementation 'meteordevelopment:meteor-client:1.21.11-SNAPSHOT'
 }
 
-sourceSets {
-    main {
-        java.srcDirs = [rootProject.file('src/main/java')]
-        resources.srcDirs = [rootProject.file('src/main/resources')]
-    }
-}
-
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
@@ -51,7 +44,7 @@ processResources {
 
 jar {
     inputs.property('archivesName', base.archivesName)
-    from(rootProject.file('LICENSE')) {
+    from('LICENSE') {
         rename('LICENSE', "LICENSE_${base.archivesName.get()}")
     }
 }

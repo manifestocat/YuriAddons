@@ -25,8 +25,8 @@ dependencies {
 
 sourceSets {
     main {
-        java.srcDirs = [rootProject.file('src/main/java')]
-        resources.srcDirs = [rootProject.file('src/main/resources')]
+        java.srcDirs = [file('../src/main/java')]
+        resources.srcDirs = [file('../src/main/resources')]
     }
 }
 
@@ -50,7 +50,7 @@ processResources {
 
 jar {
     inputs.property('archivesName', base.archivesName)
-    from(rootProject.file('LICENSE')) {
+    from(file('../LICENSE')) {
         rename('LICENSE', "LICENSE_${base.archivesName.get()}")
     }
 }

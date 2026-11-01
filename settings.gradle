@@ -5,8 +5,7 @@ pluginManagement {
         gradlePluginPortal()
     }
     plugins {
-        id 'fabric-loom' version '1.18-SNAPSHOT'
-        id 'net.fabricmc.fabric-loom' version '1.18-SNAPSHOT'
+        id 'fabric-loom' version '1.14-SNAPSHOT'
     }
 }
 
@@ -15,5 +14,3 @@ plugins {
 }
 
 rootProject.name = 'yuri-addons'
-
-include 'mc12111', 'mc263'
