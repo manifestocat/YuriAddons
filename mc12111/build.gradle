@@ -1,0 +1,61 @@
+plugins {
+    id 'fabric-loom'
+}
+
+def modVersion = providers.gradleProperty('mod_version').getOrElse('1.0.0')
+def mavenGroup = providers.gradleProperty('maven_group').getOrElse('com.yuri')
+
+base {
+    archivesName = 'yuri-addons-1.21.11'
+    version = modVersion
+    group = mavenGroup
+}
+
+repositories {
+    maven { name = 'meteor-maven'; url = 'https://maven.meteordev.org/releases' }
+    maven { name = 'meteor-maven-snapshots'; url = 'https://maven.meteordev.org/snapshots' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.11'
+    mappings loom.officialMojangMappings()
+    modImplementation 'net.fabricmc:fabric-loader:0.18.2'
+    modImplementation 'meteordevelopment:meteor-client:1.21.11-SNAPSHOT'
+}
+
+sourceSets {
+    main {
+        java.srcDirs = [rootProject.file('src/main/java')]
+        resources.srcDirs = [rootProject.file('src/main/resources')]
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+processResources {
+    def props = [
+        version: project.version,
+        minecraft_version: '1.21.11',
+        jdk_version: 21
+    ]
+    inputs.properties(props)
+    filesMatching('fabric.mod.json') {
+        expand(props)
+    }
+}
+
+jar {
+    inputs.property('archivesName', base.archivesName)
+    from(rootProject.file('LICENSE')) {
+        rename('LICENSE', "LICENSE_${base.archivesName.get()}")
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll(['-Xlint:deprecation', '-Xlint:unchecked'])
+}

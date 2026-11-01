@@ -1,0 +1,60 @@
+plugins {
+    id 'net.fabricmc.fabric-loom'
+}
+
+def modVersion = providers.gradleProperty('mod_version').getOrElse('1.0.0')
+def mavenGroup = providers.gradleProperty('maven_group').getOrElse('com.yuri')
+
+base {
+    archivesName = 'yuri-addons-26.3'
+    version = modVersion
+    group = mavenGroup
+}
+
+repositories {
+    maven { name = 'meteor-maven'; url = 'https://maven.meteordev.org/releases' }
+    maven { name = 'meteor-maven-snapshots'; url = 'https://maven.meteordev.org/snapshots' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:26.3'
+    implementation 'net.fabricmc:fabric-loader:0.19.5'
+    implementation 'meteordevelopment:meteor-client:26.3-SNAPSHOT'
+}
+
+sourceSets {
+    main {
+        java.srcDirs = [rootProject.file('src/main/java')]
+        resources.srcDirs = [rootProject.file('src/main/resources')]
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+processResources {
+    def props = [
+        version: project.version,
+        minecraft_version: '~26.3',
+        jdk_version: 25
+    ]
+    inputs.properties(props)
+    filesMatching('fabric.mod.json') {
+        expand(props)
+    }
+}
+
+jar {
+    inputs.property('archivesName', base.archivesName)
+    from(rootProject.file('LICENSE')) {
+        rename('LICENSE', "LICENSE_${base.archivesName.get()}")
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll(['-Xlint:deprecation', '-Xlint:unchecked'])
+}

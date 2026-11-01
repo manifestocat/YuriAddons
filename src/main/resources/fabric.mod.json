@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "yuri-addons",
+  "version": "${version}",
+  "name": "Yuri Addons",
+  "description": "A Meteor Client addon focused on practical PvP utilities. First module: AutoDrain, which automatically removes enemy-placed water using buckets, blocks, webs, sponges or a mixed strategy.",
+  "authors": [
+    "Yuri"
+  ],
+  "contact": {
+    "sources": "https://github.com/manifestocat/YuriAddons"
+  },
+  "icon": "assets/yuriaddons/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "meteor": [
+      "com.yuri.addons.YuriAddons"
+    ]
+  },
+  "custom": {
+    "meteor-client:color": "0,200,255",
+    "modmenu": {
+      "parent": {
+        "id": "meteor-client"
+      }
+    }
+  },
+  "depends": {
+    "java": ">=${jdk_version}",
+    "minecraft": "${minecraft_version}",
+    "meteor-client": "*"
+  }
+}
