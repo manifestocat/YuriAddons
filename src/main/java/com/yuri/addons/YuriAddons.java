@@ -2,6 +2,7 @@ package com.yuri.addons;
 
 import com.mojang.logging.LogUtils;
 import com.yuri.addons.modules.AutoDrain;
+import com.yuri.addons.modules.AutoWebPlus;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
@@ -22,6 +23,7 @@ public class YuriAddons extends MeteorAddon {
         LOG.info("Initializing Yuri Addons");
 
         Modules.get().add(new AutoDrain());
+        Modules.get().add(new AutoWebPlus());
     }
 
     @Override

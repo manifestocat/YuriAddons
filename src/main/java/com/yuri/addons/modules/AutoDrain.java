@@ -2,7 +2,15 @@
 
 package com.yuri.addons.modules;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
 import com.yuri.addons.YuriAddons;
+import com.yuri.addons.utils.ScreenUtils;
 import meteordevelopment.meteorclient.events.entity.player.InteractItemEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.BlockUpdateEvent;
@@ -26,7 +34,6 @@ import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -45,14 +52,6 @@ import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 
 
 public class AutoDrain extends Module {
@@ -461,7 +460,7 @@ public class AutoDrain extends Module {
         updateRenderPositions(candidates);
 
         if (tick < nextActionTick) return;
-        if (pauseInGui.get() && isScreenOpen()) return;
+        if (pauseInGui.get() && ScreenUtils.isOpen()) return;
         if (candidates.isEmpty()) return;
 
         int actions = 0;
@@ -930,24 +929,6 @@ public class AutoDrain extends Module {
             }
             case Auto -> {
             }
-        }
-    }
-
-    private boolean isScreenOpen() {
-        if (mc == null) return false;
-
-        try {
-            Field screen = Minecraft.class.getField("screen");
-            return screen.get(mc) != null;
-        } catch (NoSuchFieldException e) {
-            try {
-                Object gui = Minecraft.class.getField("gui").get(mc);
-                return gui != null && gui.getClass().getMethod("screen").invoke(gui) != null;
-            } catch (ReflectiveOperationException ex) {
-                return false;
-            }
-        } catch (IllegalAccessException e) {
-            return false;
         }
     }
 
