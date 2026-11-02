@@ -41,7 +41,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Boolean> onlyOnAttack = sgGeneral.add(new BoolSetting.Builder()
         .name("only-on-attack")
         .description("Only aim while the attack key is held.")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
@@ -64,7 +64,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> fov = sgTargeting.add(new DoubleSetting.Builder()
         .name("fov")
         .description("Maximum angle between your crosshair and the target.")
-        .defaultValue(60.0)
+        .defaultValue(45.0)
         .min(1)
         .sliderRange(1, 180)
         .build()
@@ -89,7 +89,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Boolean> ignoreInvisible = sgTargeting.add(new BoolSetting.Builder()
         .name("ignore-invisible")
         .description("Do not target invisible players.")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
@@ -117,7 +117,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> speed = sgAim.add(new DoubleSetting.Builder()
         .name("speed")
         .description("Percentage of the remaining angle to turn each tick.")
-        .defaultValue(14.0)
+        .defaultValue(10.0)
         .min(1)
         .sliderRange(1, 100)
         .build()
@@ -126,7 +126,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> maxSpeed = sgAim.add(new DoubleSetting.Builder()
         .name("max-speed")
         .description("Maximum turn in degrees per tick. 0 means no limit.")
-        .defaultValue(25.0)
+        .defaultValue(20.0)
         .min(0)
         .sliderRange(0, 360)
         .build()
@@ -135,7 +135,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> verticalSpeed = sgAim.add(new DoubleSetting.Builder()
         .name("vertical-speed")
         .description("Vertical aim speed as a percentage of horizontal speed.")
-        .defaultValue(50.0)
+        .defaultValue(45.0)
         .min(0)
         .sliderRange(0, 100)
         .build()
@@ -144,16 +144,34 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> smoothing = sgAim.add(new DoubleSetting.Builder()
         .name("smoothing")
         .description("Extra acceleration smoothing. Higher values are smoother but react slower.")
-        .defaultValue(60.0)
+        .defaultValue(70.0)
         .min(0)
         .sliderRange(0, 95)
+        .build()
+    );
+
+    private final Setting<Integer> reactionDelayMin = sgAim.add(new IntSetting.Builder()
+        .name("reaction-delay-min")
+        .description("Minimum delay before aiming at a new target in milliseconds.")
+        .defaultValue(40)
+        .min(0)
+        .sliderRange(0, 500)
+        .build()
+    );
+
+    private final Setting<Integer> reactionDelayMax = sgAim.add(new IntSetting.Builder()
+        .name("reaction-delay-max")
+        .description("Maximum delay before aiming at a new target in milliseconds.")
+        .defaultValue(100)
+        .min(0)
+        .sliderRange(0, 500)
         .build()
     );
 
     private final Setting<Double> randomness = sgAim.add(new DoubleSetting.Builder()
         .name("randomness")
         .description("Random angular offset in degrees added each tick.")
-        .defaultValue(0.12)
+        .defaultValue(0.15)
         .min(0)
         .sliderRange(0, 5)
         .build()
@@ -220,6 +238,7 @@ public class AimAssistPlus extends Module {
     private long lastValidTick;
     private float yawVelocity;
     private float pitchVelocity;
+    private long aimStart;
 
     public AimAssistPlus() {
         super(YuriAddons.CATEGORY, "aim-assist-plus",
@@ -232,6 +251,7 @@ public class AimAssistPlus extends Module {
         target = null;
         tick = 0;
         lastValidTick = 0;
+        aimStart = 0;
         resetAim();
     }
 
@@ -274,6 +294,11 @@ public class AimAssistPlus extends Module {
             return;
         }
 
+        if (System.currentTimeMillis() < aimStart) {
+            resetAim();
+            return;
+        }
+
         aimAt(target);
     }
 
@@ -304,8 +329,22 @@ public class AimAssistPlus extends Module {
         Player previous = target;
         target = findBestTarget();
 
-        if (target != previous) resetAim();
+        if (target != previous) {
+            resetAim();
+
+            if (target != null) {
+                aimStart = System.currentTimeMillis() + randomReactionDelay();
+            }
+        }
+
         if (target != null) lastValidTick = tick;
+    }
+
+    private int randomReactionDelay() {
+        int min = reactionDelayMin.get();
+        int max = reactionDelayMax.get();
+        if (max < min) max = min;
+        return min + (int) (Math.random() * (max - min + 1));
     }
 
     private void resetAim() {

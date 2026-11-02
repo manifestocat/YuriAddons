@@ -39,7 +39,7 @@ public class HitWeb extends Module {
     private final Setting<Double> chance = sgGeneral.add(new DoubleSetting.Builder()
         .name("chance")
         .description("Chance percentage that a hit places a web.")
-        .defaultValue(35.0)
+        .defaultValue(25.0)
         .min(0)
         .sliderRange(0, 100)
         .build()
@@ -48,9 +48,27 @@ public class HitWeb extends Module {
     private final Setting<Integer> cooldown = sgGeneral.add(new IntSetting.Builder()
         .name("cooldown-ms")
         .description("Minimum time between hit-triggered webs in milliseconds.")
-        .defaultValue(250)
+        .defaultValue(300)
         .min(0)
         .sliderRange(0, 2000)
+        .build()
+    );
+
+    private final Setting<Integer> reactionDelayMin = sgGeneral.add(new IntSetting.Builder()
+        .name("reaction-delay-min")
+        .description("Minimum human-like delay after a hit before placing in milliseconds.")
+        .defaultValue(30)
+        .min(0)
+        .sliderRange(0, 500)
+        .build()
+    );
+
+    private final Setting<Integer> reactionDelayMax = sgGeneral.add(new IntSetting.Builder()
+        .name("reaction-delay-max")
+        .description("Maximum human-like delay after a hit before placing in milliseconds.")
+        .defaultValue(90)
+        .min(0)
+        .sliderRange(0, 500)
         .build()
     );
 
@@ -85,7 +103,7 @@ public class HitWeb extends Module {
     private final Setting<Boolean> ignoreInvisible = sgTargeting.add(new BoolSetting.Builder()
         .name("ignore-invisible")
         .description("Do not web invisible players.")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
@@ -173,6 +191,33 @@ public class HitWeb extends Module {
         .build()
     );
 
+    private final Setting<Boolean> legitSwap = sgPlacement.add(new BoolSetting.Builder()
+        .name("legit-swap")
+        .description("Visibly select the web hotbar slot before placing.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> swapDelay = sgPlacement.add(new IntSetting.Builder()
+        .name("swap-delay")
+        .description("Ticks to hold the web slot before placing.")
+        .defaultValue(2)
+        .min(1)
+        .sliderRange(1, 10)
+        .visible(legitSwap::get)
+        .build()
+    );
+
+    private final Setting<Integer> swapBackDelay = sgPlacement.add(new IntSetting.Builder()
+        .name("swap-back-delay")
+        .description("Ticks to wait after placing before swapping back.")
+        .defaultValue(2)
+        .min(0)
+        .sliderRange(0, 10)
+        .visible(() -> legitSwap.get() && swapBack.get())
+        .build()
+    );
+
     private final Setting<Boolean> render = sgRender.add(new BoolSetting.Builder()
         .name("render")
         .description("Render the last placed web position.")
@@ -218,6 +263,7 @@ public class HitWeb extends Module {
     private long renderUntil;
     private long tick;
     private long lastHit;
+    private PendingHit pending;
 
     public HitWeb() {
         super(YuriAddons.CATEGORY, "hit-web",
@@ -231,12 +277,14 @@ public class HitWeb extends Module {
         renderUntil = 0;
         tick = 0;
         lastHit = 0;
+        pending = null;
     }
 
     @Override
     public void onDeactivate() {
         renderPos = null;
         renderUntil = 0;
+        cancelPending(true);
     }
 
     @Override
@@ -247,6 +295,7 @@ public class HitWeb extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         tick++;
+        handlePending();
 
         if (renderPos != null && tick > renderUntil) renderPos = null;
     }
@@ -254,6 +303,7 @@ public class HitWeb extends Module {
     @EventHandler(priority = EventPriority.LOW)
     private void onAttack(AttackEntityEvent event) {
         if (!Utils.canUpdate() || event.isCancelled()) return;
+        if (pending != null) return;
         if (pauseInGui.get() && ScreenUtils.isOpen()) return;
         if (!(event.entity instanceof Player target) || target == mc.player) return;
         if (!isValidTarget(target)) return;
@@ -263,32 +313,106 @@ public class HitWeb extends Module {
         if (now - lastHit < cooldown.get()) return;
         lastHit = now;
 
-        List<BlockPos> positions = WebUtils.getPlacePositions(
-            target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-            airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
-        );
+        startHitWeb(target);
+    }
 
-        if (positions.isEmpty()) {
-            fail("Could not place a web.");
-            return;
-        }
-
+    private void startHitWeb(Player target) {
         FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
         if (!web.found()) {
             fail("No cobwebs in your hotbar or offhand.");
             return;
         }
 
-        BlockPos pos = positions.get(0);
+        int originalSlot = -1;
+        int swapTicks = 0;
 
-        if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), swapBack.get())) {
-            renderPos = pos;
-            renderUntil = tick + renderTime.get();
+        if (legitSwap.get() && web.isHotbar() && !web.isMainHand()) {
+            originalSlot = mc.player.getInventory().getSelectedSlot();
 
-            if (notify.get()) info("Webbed %s.", target.getName().getString());
-        } else {
-            fail("Could not place a web.");
+            if (InvUtils.swap(web.slot(), false)) {
+                swapTicks = Math.max(1, swapDelay.get());
+            } else {
+                originalSlot = -1;
+            }
         }
+
+        int reactionTicks = (randomReactionDelay() + 49) / 50;
+        pending = new PendingHit(target, originalSlot, tick + reactionTicks + swapTicks);
+    }
+
+    private void handlePending() {
+        if (pending == null) return;
+
+        if (pauseInGui.get() && ScreenUtils.isOpen()) {
+            cancelPending(true);
+            return;
+        }
+
+        if (!pending.placed) {
+            if (tick < pending.placeAtTick) return;
+
+            if (!Utils.canUpdate() || !pending.target.isAlive()) {
+                cancelPending(true);
+                return;
+            }
+
+            List<BlockPos> positions = WebUtils.getPlacePositions(
+                pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
+                airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+            );
+
+            if (positions.isEmpty()) {
+                cancelPending(true);
+                fail("Could not place a web.");
+                return;
+            }
+
+            FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
+            if (!web.found()) {
+                cancelPending(true);
+                fail("No cobwebs in your hotbar or offhand.");
+                return;
+            }
+
+            BlockPos pos = positions.get(0);
+
+            boolean alreadySwapped = pending.originalSlot >= 0;
+            if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), !alreadySwapped && swapBack.get())) {
+                pending.placed = true;
+                pending.restoreAtTick = tick + Math.max(0, swapBackDelay.get());
+                renderPos = pos;
+                renderUntil = tick + renderTime.get();
+
+                if (notify.get()) info("Webbed %s.", pending.target.getName().getString());
+            } else {
+                cancelPending(true);
+                fail("Could not place a web.");
+            }
+
+            return;
+        }
+
+        if (tick >= pending.restoreAtTick) {
+            if (swapBack.get() && pending.originalSlot >= 0) InvUtils.swap(pending.originalSlot, false);
+            pending = null;
+        }
+    }
+
+    private int randomReactionDelay() {
+        int min = reactionDelayMin.get();
+        int max = reactionDelayMax.get();
+        if (max < min) max = min;
+        return min + (int) (Math.random() * (max - min + 1));
+    }
+
+    private void cancelPending(boolean restore) {
+        if (pending == null) return;
+
+        if (restore && pending.originalSlot >= 0 && mc.player != null) {
+            InvUtils.swap(pending.originalSlot, false);
+        }
+
+        pending = null;
     }
 
     @EventHandler
@@ -307,5 +431,19 @@ public class HitWeb extends Module {
 
     private void fail(String message) {
         if (notifyFailures.get()) warning(message);
+    }
+
+    private static final class PendingHit {
+        final Player target;
+        final int originalSlot;
+        final long placeAtTick;
+        long restoreAtTick;
+        boolean placed;
+
+        PendingHit(Player target, int originalSlot, long placeAtTick) {
+            this.target = target;
+            this.originalSlot = originalSlot;
+            this.placeAtTick = placeAtTick;
+        }
     }
 }

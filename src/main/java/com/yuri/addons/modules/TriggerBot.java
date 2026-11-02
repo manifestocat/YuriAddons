@@ -33,7 +33,7 @@ public class TriggerBot extends Module {
     private final Setting<Double> chance = sgGeneral.add(new DoubleSetting.Builder()
         .name("chance")
         .description("Chance percentage to attack when a target is available.")
-        .defaultValue(90.0)
+        .defaultValue(80.0)
         .min(0)
         .sliderRange(0, 100)
         .build()
@@ -42,7 +42,7 @@ public class TriggerBot extends Module {
     private final Setting<Integer> delayMin = sgGeneral.add(new IntSetting.Builder()
         .name("delay-min")
         .description("Minimum delay between attacks in milliseconds.")
-        .defaultValue(60)
+        .defaultValue(90)
         .min(0)
         .sliderRange(0, 1000)
         .build()
@@ -51,7 +51,7 @@ public class TriggerBot extends Module {
     private final Setting<Integer> delayMax = sgGeneral.add(new IntSetting.Builder()
         .name("delay-max")
         .description("Maximum delay between attacks in milliseconds.")
-        .defaultValue(160)
+        .defaultValue(240)
         .min(0)
         .sliderRange(0, 1000)
         .build()
@@ -67,7 +67,7 @@ public class TriggerBot extends Module {
     private final Setting<Boolean> onlyWhileAttacking = sgGeneral.add(new BoolSetting.Builder()
         .name("only-while-attacking")
         .description("Only attack while the attack key is held.")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
@@ -121,7 +121,7 @@ public class TriggerBot extends Module {
     private final Setting<Boolean> ignoreInvisible = sgTargeting.add(new BoolSetting.Builder()
         .name("ignore-invisible")
         .description("Do not attack invisible players.")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
@@ -214,7 +214,13 @@ public class TriggerBot extends Module {
             return;
         }
 
-        target = findTarget();
+        Player newTarget = findTarget();
+
+        if (newTarget != target) {
+            target = newTarget;
+            if (target != null) nextAttack = System.currentTimeMillis() + randomDelay();
+        }
+
         if (target == null) return;
 
         long now = System.currentTimeMillis();
