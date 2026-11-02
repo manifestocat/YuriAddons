@@ -204,6 +204,33 @@ public class AutoWebPlus extends Module {
         .build()
     );
 
+    private final Setting<Boolean> legitSwap = sgPlacement.add(new BoolSetting.Builder()
+        .name("legit-swap")
+        .description("Visibly select the web hotbar slot before placing.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> swapDelay = sgPlacement.add(new IntSetting.Builder()
+        .name("swap-delay")
+        .description("Ticks to hold the web slot before placing.")
+        .defaultValue(2)
+        .min(1)
+        .sliderRange(1, 10)
+        .visible(legitSwap::get)
+        .build()
+    );
+
+    private final Setting<Integer> swapBackDelay = sgPlacement.add(new IntSetting.Builder()
+        .name("swap-back-delay")
+        .description("Ticks to wait after placing before swapping back.")
+        .defaultValue(2)
+        .min(0)
+        .sliderRange(0, 10)
+        .visible(() -> legitSwap.get() && swapBack.get())
+        .build()
+    );
+
     private final Setting<Boolean> render = sgRender.add(new BoolSetting.Builder()
         .name("render")
         .description("Render the current web position.")
@@ -238,7 +265,9 @@ public class AutoWebPlus extends Module {
     private final List<Player> candidates = new ArrayList<>();
     private Player previewTarget;
     private BlockPos previewPos;
+    private PendingWeb pending;
     private long lastTrigger;
+    private long tick;
 
     public AutoWebPlus() {
         super(YuriAddons.CATEGORY, "auto-web-plus",
@@ -251,7 +280,9 @@ public class AutoWebPlus extends Module {
         candidates.clear();
         previewTarget = null;
         previewPos = null;
+        pending = null;
         lastTrigger = 0;
+        tick = 0;
 
         if (!triggerKey.get().isSet()) warning("Set trigger-key in Auto Web Plus settings.");
     }
@@ -261,6 +292,7 @@ public class AutoWebPlus extends Module {
         candidates.clear();
         previewTarget = null;
         previewPos = null;
+        cancelPending(true);
     }
 
     @Override
@@ -270,7 +302,9 @@ public class AutoWebPlus extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
+        tick++;
         updatePreview();
+        handlePending();
     }
 
     @EventHandler
@@ -282,6 +316,7 @@ public class AutoWebPlus extends Module {
 
     private void trigger() {
         if (!Utils.canUpdate()) return;
+        if (pending != null) return;
         if (pauseInGui.get() && ScreenUtils.isOpen()) return;
 
         long now = System.currentTimeMillis();
@@ -294,22 +329,93 @@ public class AutoWebPlus extends Module {
             return;
         }
 
-        for (Player target : targets) {
-            for (BlockPos pos : getPlacePositions(target)) {
-                FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
-                if (!web.found()) {
-                    fail("No cobwebs in your hotbar or offhand.");
-                    return;
-                }
+        FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
+        if (!web.found()) {
+            fail("No cobwebs in your hotbar or offhand.");
+            return;
+        }
 
-                if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), swapBack.get())) {
-                    if (notify.get()) info("Webbed %s.", target.getName().getString());
+        for (Player target : targets) {
+            List<BlockPos> positions = getPlacePositions(target);
+            if (positions.isEmpty()) continue;
+
+            BlockPos pos = positions.get(0);
+
+            if (legitSwap.get() && web.isHotbar() && !web.isMainHand()) {
+                int originalSlot = mc.player.getInventory().getSelectedSlot();
+
+                if (InvUtils.swap(web.slot(), false)) {
+                    pending = new PendingWeb(target, originalSlot, tick + Math.max(1, swapDelay.get()));
                     return;
                 }
+            }
+
+            if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), swapBack.get())) {
+                if (notify.get()) info("Webbed %s.", target.getName().getString());
+                return;
             }
         }
 
         fail("Could not place a web.");
+    }
+
+    private void handlePending() {
+        if (pending == null) return;
+
+        if (pauseInGui.get() && ScreenUtils.isOpen()) {
+            cancelPending(true);
+            return;
+        }
+
+        if (!pending.placed) {
+            if (tick < pending.placeAtTick) return;
+
+            if (!Utils.canUpdate() || !pending.target.isAlive()) {
+                cancelPending(true);
+                return;
+            }
+
+            List<BlockPos> positions = getPlacePositions(pending.target);
+            if (positions.isEmpty()) {
+                cancelPending(true);
+                fail("Could not place a web.");
+                return;
+            }
+
+            FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
+            if (!web.found()) {
+                cancelPending(true);
+                fail("No cobwebs in your hotbar or offhand.");
+                return;
+            }
+
+            if (BlockUtils.place(positions.get(0), web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), false)) {
+                pending.placed = true;
+                pending.restoreAtTick = tick + Math.max(0, swapBackDelay.get());
+
+                if (notify.get()) info("Webbed %s.", pending.target.getName().getString());
+            } else {
+                cancelPending(true);
+                fail("Could not place a web.");
+            }
+
+            return;
+        }
+
+        if (tick >= pending.restoreAtTick) {
+            if (swapBack.get()) InvUtils.swap(pending.originalSlot, false);
+            pending = null;
+        }
+    }
+
+    private void cancelPending(boolean restore) {
+        if (pending == null) return;
+
+        if (restore && pending.originalSlot >= 0 && mc.player != null) {
+            InvUtils.swap(pending.originalSlot, false);
+        }
+
+        pending = null;
     }
 
     private void updatePreview() {
@@ -433,6 +539,20 @@ public class AutoWebPlus extends Module {
 
     private void fail(String message) {
         if (notifyFailures.get()) warning(message);
+    }
+
+    private static final class PendingWeb {
+        final Player target;
+        final int originalSlot;
+        final long placeAtTick;
+        long restoreAtTick;
+        boolean placed;
+
+        PendingWeb(Player target, int originalSlot, long placeAtTick) {
+            this.target = target;
+            this.originalSlot = originalSlot;
+            this.placeAtTick = placeAtTick;
+        }
     }
 
     public enum TargetMode {

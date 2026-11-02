@@ -117,7 +117,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> speed = sgAim.add(new DoubleSetting.Builder()
         .name("speed")
         .description("Percentage of the remaining angle to turn each tick.")
-        .defaultValue(35.0)
+        .defaultValue(14.0)
         .min(1)
         .sliderRange(1, 100)
         .build()
@@ -126,7 +126,7 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> maxSpeed = sgAim.add(new DoubleSetting.Builder()
         .name("max-speed")
         .description("Maximum turn in degrees per tick. 0 means no limit.")
-        .defaultValue(180.0)
+        .defaultValue(25.0)
         .min(0)
         .sliderRange(0, 360)
         .build()
@@ -135,16 +135,25 @@ public class AimAssistPlus extends Module {
     private final Setting<Double> verticalSpeed = sgAim.add(new DoubleSetting.Builder()
         .name("vertical-speed")
         .description("Vertical aim speed as a percentage of horizontal speed.")
-        .defaultValue(65.0)
+        .defaultValue(50.0)
         .min(0)
         .sliderRange(0, 100)
+        .build()
+    );
+
+    private final Setting<Double> smoothing = sgAim.add(new DoubleSetting.Builder()
+        .name("smoothing")
+        .description("Extra acceleration smoothing. Higher values are smoother but react slower.")
+        .defaultValue(60.0)
+        .min(0)
+        .sliderRange(0, 95)
         .build()
     );
 
     private final Setting<Double> randomness = sgAim.add(new DoubleSetting.Builder()
         .name("randomness")
         .description("Random angular offset in degrees added each tick.")
-        .defaultValue(0.4)
+        .defaultValue(0.12)
         .min(0)
         .sliderRange(0, 5)
         .build()
@@ -209,6 +218,8 @@ public class AimAssistPlus extends Module {
     private Player target;
     private long tick;
     private long lastValidTick;
+    private float yawVelocity;
+    private float pitchVelocity;
 
     public AimAssistPlus() {
         super(YuriAddons.CATEGORY, "aim-assist-plus",
@@ -221,11 +232,13 @@ public class AimAssistPlus extends Module {
         target = null;
         tick = 0;
         lastValidTick = 0;
+        resetAim();
     }
 
     @Override
     public void onDeactivate() {
         target = null;
+        resetAim();
     }
 
     @Override
@@ -241,17 +254,25 @@ public class AimAssistPlus extends Module {
 
         if (pauseInGui.get() && ScreenUtils.isOpen()) {
             target = null;
+            resetAim();
             return;
         }
 
         if (onlyOnAttack.get() && !mc.options.keyAttack.isDown()) {
             target = null;
+            resetAim();
             return;
         }
 
         updateTarget();
-        if (target == null) return;
-        if (mc.player.distanceTo(target) > range.get()) return;
+        if (target == null) {
+            resetAim();
+            return;
+        }
+        if (mc.player.distanceTo(target) > range.get()) {
+            resetAim();
+            return;
+        }
 
         aimAt(target);
     }
@@ -277,10 +298,19 @@ public class AimAssistPlus extends Module {
             }
 
             target = null;
+            resetAim();
         }
 
+        Player previous = target;
         target = findBestTarget();
+
+        if (target != previous) resetAim();
         if (target != null) lastValidTick = tick;
+    }
+
+    private void resetAim() {
+        yawVelocity = 0.0F;
+        pitchVelocity = 0.0F;
     }
 
     private boolean canStick(Player player) {
@@ -405,8 +435,15 @@ public class AimAssistPlus extends Module {
             pitchStep = Mth.clamp(pitchStep, -limit, limit);
         }
 
-        mc.player.setYRot(currentYaw + yawStep);
-        mc.player.setXRot(Mth.clamp(currentPitch + pitchStep, -90.0F, 90.0F));
+        float response = 1.0F - (float) (smoothing.get() / 100.0);
+        yawVelocity += (yawStep - yawVelocity) * response;
+        pitchVelocity += (pitchStep - pitchVelocity) * response;
+
+        yawVelocity = Mth.clamp(yawVelocity, -Math.abs(yawDelta), Math.abs(yawDelta));
+        pitchVelocity = Mth.clamp(pitchVelocity, -Math.abs(pitchDelta), Math.abs(pitchDelta));
+
+        mc.player.setYRot(currentYaw + yawVelocity);
+        mc.player.setXRot(Mth.clamp(currentPitch + pitchVelocity, -90.0F, 90.0F));
     }
 
     public enum TargetMode {
