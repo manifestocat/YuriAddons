@@ -1,4 +1,3 @@
-
 package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;

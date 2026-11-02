@@ -2,6 +2,7 @@ package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;
 import com.yuri.addons.utils.ScreenUtils;
+import meteordevelopment.meteorclient.events.entity.player.AttackEntityEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -22,6 +23,7 @@ import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.orbit.EventPriority;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
@@ -39,6 +41,7 @@ public class AutoWebPlus extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgTargeting = settings.createGroup("Targeting");
     private final SettingGroup sgPlacement = settings.createGroup("Placement");
+    private final SettingGroup sgHitWeb = settings.createGroup("Hit Web");
     private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Keybind> triggerKey = sgGeneral.add(new KeybindSetting.Builder()
@@ -181,6 +184,13 @@ public class AutoWebPlus extends Module {
         .build()
     );
 
+    private final Setting<Boolean> airPlace = sgPlacement.add(new BoolSetting.Builder()
+        .name("air-place")
+        .description("Allow placing webs without a solid block next to the position.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<Boolean> rotate = sgPlacement.add(new BoolSetting.Builder()
         .name("rotate")
         .description("Silently rotate towards the web position.")
@@ -231,6 +241,33 @@ public class AutoWebPlus extends Module {
         .build()
     );
 
+    private final Setting<Boolean> hitWeb = sgHitWeb.add(new BoolSetting.Builder()
+        .name("hit-web")
+        .description("Place a web on a player immediately after you hit them.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Double> hitWebChance = sgHitWeb.add(new DoubleSetting.Builder()
+        .name("hit-web-chance")
+        .description("Chance percentage that a hit places a web.")
+        .defaultValue(35.0)
+        .min(0)
+        .sliderRange(0, 100)
+        .visible(hitWeb::get)
+        .build()
+    );
+
+    private final Setting<Integer> hitWebCooldown = sgHitWeb.add(new IntSetting.Builder()
+        .name("hit-web-cooldown")
+        .description("Minimum time between hit-triggered webs in milliseconds.")
+        .defaultValue(250)
+        .min(0)
+        .sliderRange(0, 2000)
+        .visible(hitWeb::get)
+        .build()
+    );
+
     private final Setting<Boolean> render = sgRender.add(new BoolSetting.Builder()
         .name("render")
         .description("Render the current web position.")
@@ -267,6 +304,7 @@ public class AutoWebPlus extends Module {
     private BlockPos previewPos;
     private PendingWeb pending;
     private long lastTrigger;
+    private long lastHitWeb;
     private long tick;
 
     public AutoWebPlus() {
@@ -282,6 +320,7 @@ public class AutoWebPlus extends Module {
         previewPos = null;
         pending = null;
         lastTrigger = 0;
+        lastHitWeb = 0;
         tick = 0;
 
         if (!triggerKey.get().isSet()) warning("Set trigger-key in Auto Web Plus settings.");
@@ -329,34 +368,66 @@ public class AutoWebPlus extends Module {
             return;
         }
 
-        FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
-        if (!web.found()) {
+        if (!InvUtils.findInHotbar(Items.COBWEB).found()) {
             fail("No cobwebs in your hotbar or offhand.");
             return;
         }
 
         for (Player target : targets) {
-            List<BlockPos> positions = getPlacePositions(target);
-            if (positions.isEmpty()) continue;
-
-            BlockPos pos = positions.get(0);
-
-            if (legitSwap.get() && web.isHotbar() && !web.isMainHand()) {
-                int originalSlot = mc.player.getInventory().getSelectedSlot();
-
-                if (InvUtils.swap(web.slot(), false)) {
-                    pending = new PendingWeb(target, originalSlot, tick + Math.max(1, swapDelay.get()));
-                    return;
-                }
-            }
-
-            if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), swapBack.get())) {
-                if (notify.get()) info("Webbed %s.", target.getName().getString());
-                return;
-            }
+            if (placeOnTarget(target, false)) return;
         }
 
         fail("Could not place a web.");
+    }
+
+    private boolean placeOnTarget(Player target, boolean instant) {
+        List<BlockPos> positions = getPlacePositions(target, !instant && predictMovement.get());
+        if (positions.isEmpty()) return false;
+
+        BlockPos pos = positions.get(0);
+        FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
+        if (!web.found()) return false;
+
+        if (!instant && legitSwap.get() && web.isHotbar() && !web.isMainHand()) {
+            int originalSlot = mc.player.getInventory().getSelectedSlot();
+
+            if (InvUtils.swap(web.slot(), false)) {
+                pending = new PendingWeb(target, originalSlot, tick + Math.max(1, swapDelay.get()));
+                return true;
+            }
+        }
+
+        if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), swapBack.get())) {
+            if (notify.get()) info("Webbed %s.", target.getName().getString());
+            return true;
+        }
+
+        return false;
+    }
+
+    @EventHandler(priority = EventPriority.LOW)
+    private void onAttack(AttackEntityEvent event) {
+        if (!hitWeb.get() || event.isCancelled()) return;
+        if (!Utils.canUpdate()) return;
+        if (pending != null) return;
+        if (pauseInGui.get() && ScreenUtils.isOpen()) return;
+        if (!(event.entity instanceof Player target) || target == mc.player) return;
+        if (!isHitWebTarget(target)) return;
+        if (Math.random() * 100.0 >= hitWebChance.get()) return;
+
+        long now = System.currentTimeMillis();
+        if (now - lastHitWeb < hitWebCooldown.get()) return;
+        lastHitWeb = now;
+
+        placeOnTarget(target, true);
+    }
+
+    private boolean isHitWebTarget(Player target) {
+        if (!target.isAlive() || target.isDeadOrDying() || target.isSpectator()) return false;
+        if (ignoreInvisible.get() && target.isInvisible()) return false;
+        if (ignoreFriends.get() && Friends.get().isFriend(target)) return false;
+        if (mc.player.distanceTo(target) > targetRange.get()) return false;
+        return !onlyTargetOnGround.get() || target.onGround();
     }
 
     private void handlePending() {
@@ -487,11 +558,15 @@ public class AutoWebPlus extends Module {
     }
 
     private List<BlockPos> getPlacePositions(Player target) {
+        return getPlacePositions(target, predictMovement.get());
+    }
+
+    private List<BlockPos> getPlacePositions(Player target, boolean predict) {
         List<BlockPos> positions = new ArrayList<>(4);
 
         Vec3 base = target.position();
 
-        if (predictMovement.get()) {
+        if (predict) {
             double ticks = predictionTicks.get();
             double dx = target.getX() - target.xo;
             double dy = target.getY() - target.yo;
@@ -523,6 +598,7 @@ public class AutoWebPlus extends Module {
 
     private boolean canPlaceWeb(BlockPos pos) {
         if (!BlockUtils.canPlaceBlock(pos, checkEntities.get(), Blocks.COBWEB)) return false;
+        if (!airPlace.get() && BlockUtils.getPlaceSide(pos) == null) return false;
         if (mc.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos)) > placeRange.get() * placeRange.get()) return false;
         return !checkLineOfSight.get() || canSee(pos);
     }
