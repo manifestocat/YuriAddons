@@ -158,30 +158,16 @@ public class AutoWebPlus extends Module {
 
     private final Setting<Double> placeRange = sgPlacement.add(new DoubleSetting.Builder()
         .name("place-range")
-        .description("Maximum distance from your eyes to the web position.")
+        .description("Maximum distance from your eyes to the web position, capped at the vanilla block interaction range.")
         .defaultValue(4.5)
         .min(0)
         .sliderRange(0, 6)
         .build()
     );
 
-    private final Setting<Boolean> checkLineOfSight = sgPlacement.add(new BoolSetting.Builder()
-        .name("check-line-of-sight")
-        .description("Only place webs that are visible from your eyes.")
-        .defaultValue(true)
-        .build()
-    );
-
     private final Setting<Boolean> checkEntities = sgPlacement.add(new BoolSetting.Builder()
         .name("check-entities")
         .description("Do not place webs inside entities. Usually off so the web can be placed in the target's hitbox.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> airPlace = sgPlacement.add(new BoolSetting.Builder()
-        .name("air-place")
-        .description("Allow placing webs without a solid block next to the position.")
         .defaultValue(false)
         .build()
     );
@@ -349,7 +335,7 @@ public class AutoWebPlus extends Module {
     private boolean placeOnTarget(Player target) {
         List<BlockPos> positions = WebUtils.getPlacePositions(
             target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-            airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+            checkEntities.get(), placeRange.get()
         );
         if (positions.isEmpty()) return false;
 
@@ -392,7 +378,7 @@ public class AutoWebPlus extends Module {
 
             List<BlockPos> positions = WebUtils.getPlacePositions(
                 pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-                airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+                checkEntities.get(), placeRange.get()
             );
             if (positions.isEmpty()) {
                 cancelPending(true);
@@ -447,7 +433,7 @@ public class AutoWebPlus extends Module {
         for (Player target : targets) {
             List<BlockPos> positions = WebUtils.getPlacePositions(
                 target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-                airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+                checkEntities.get(), placeRange.get()
             );
             if (!positions.isEmpty()) {
                 previewTarget = target;

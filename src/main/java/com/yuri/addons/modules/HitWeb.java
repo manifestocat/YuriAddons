@@ -1,6 +1,7 @@
 package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;
+import com.yuri.addons.utils.InteractionUtils;
 import com.yuri.addons.utils.ScreenUtils;
 import com.yuri.addons.utils.WebUtils;
 import com.yuri.addons.utils.WebUtils.WebPosition;
@@ -114,24 +115,10 @@ public class HitWeb extends Module {
         .build()
     );
 
-    private final Setting<Boolean> checkLineOfSight = sgTargeting.add(new BoolSetting.Builder()
-        .name("check-line-of-sight")
-        .description("Only place webs that are visible from your eyes.")
-        .defaultValue(true)
-        .build()
-    );
-
     private final Setting<WebPosition> webPosition = sgPlacement.add(new EnumSetting.Builder<WebPosition>()
         .name("web-position")
         .description("Where to place the web relative to the target.")
         .defaultValue(WebPosition.Feet)
-        .build()
-    );
-
-    private final Setting<Boolean> airPlace = sgPlacement.add(new BoolSetting.Builder()
-        .name("air-place")
-        .description("Allow placing webs without a solid block next to the position.")
-        .defaultValue(false)
         .build()
     );
 
@@ -161,7 +148,7 @@ public class HitWeb extends Module {
 
     private final Setting<Double> placeRange = sgPlacement.add(new DoubleSetting.Builder()
         .name("place-range")
-        .description("Maximum distance from your eyes to the web position.")
+        .description("Maximum distance from your eyes to the web position, capped at the vanilla block interaction range.")
         .defaultValue(4.5)
         .min(0)
         .sliderRange(0, 6)
@@ -317,6 +304,18 @@ public class HitWeb extends Module {
     }
 
     private void startHitWeb(Player target) {
+        if (InteractionUtils.isPlayerInWeb()) return;
+
+        List<BlockPos> positions = WebUtils.getPlacePositions(
+            target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
+            checkEntities.get(), placeRange.get()
+        );
+
+        if (positions.isEmpty()) {
+            fail("Could not place a web.");
+            return;
+        }
+
         FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
         if (!web.found()) {
             fail("No cobwebs in your hotbar or offhand.");
@@ -358,7 +357,7 @@ public class HitWeb extends Module {
 
             List<BlockPos> positions = WebUtils.getPlacePositions(
                 pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-                airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+                checkEntities.get(), placeRange.get()
             );
 
             if (positions.isEmpty()) {

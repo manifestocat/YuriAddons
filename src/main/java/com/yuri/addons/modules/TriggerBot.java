@@ -20,10 +20,6 @@ import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 
 public class TriggerBot extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -85,29 +81,12 @@ public class TriggerBot extends Module {
         .build()
     );
 
-    private final Setting<TargetMode> targetMode = sgTargeting.add(new EnumSetting.Builder<TargetMode>()
-        .name("target-mode")
-        .description("How the target is selected. Crosshair only attacks the entity under your crosshair.")
-        .defaultValue(TargetMode.Crosshair)
-        .build()
-    );
-
     private final Setting<Double> range = sgTargeting.add(new DoubleSetting.Builder()
         .name("range")
-        .description("Maximum distance to target a player.")
+        .description("Maximum attack range, capped at the vanilla entity interaction range.")
         .defaultValue(3.0)
         .min(1)
         .sliderRange(1, 6)
-        .build()
-    );
-
-    private final Setting<Double> fov = sgTargeting.add(new DoubleSetting.Builder()
-        .name("fov")
-        .description("Maximum angle between your crosshair and the target for non-crosshair modes.")
-        .defaultValue(60.0)
-        .min(1)
-        .sliderRange(1, 180)
-        .visible(() -> targetMode.get() != TargetMode.Crosshair)
         .build()
     );
 
@@ -129,14 +108,6 @@ public class TriggerBot extends Module {
         .name("only-target-on-ground")
         .description("Only attack players who are standing on the ground.")
         .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> checkLineOfSight = sgTargeting.add(new BoolSetting.Builder()
-        .name("check-line-of-sight")
-        .description("Only attack players you can see.")
-        .defaultValue(true)
-        .visible(() -> targetMode.get() != TargetMode.Crosshair)
         .build()
     );
 
@@ -241,36 +212,8 @@ public class TriggerBot extends Module {
     }
 
     private Player findTarget() {
-        if (targetMode.get() == TargetMode.Crosshair) {
-            if (mc.crosshairPickEntity instanceof Player player && isValidTarget(player)) return player;
-            return null;
-        }
-
-        Player best = null;
-        double bestScore = Double.MAX_VALUE;
-        Vec3 look = mc.player.getViewVector(1.0F);
-        double fovCos = Math.cos(Math.toRadians(fov.get()));
-
-        for (Player player : mc.level.players()) {
-            if (!isValidTarget(player)) continue;
-
-            Vec3 direction = player.getEyePosition().subtract(mc.player.getEyePosition());
-            if (direction.lengthSqr() < 1.0E-6) continue;
-
-            double dot = look.dot(direction.normalize());
-            if (dot < fovCos) continue;
-
-            double score = targetMode.get() == TargetMode.Nearest
-                ? mc.player.distanceTo(player)
-                : player.getHealth();
-
-            if (score < bestScore) {
-                bestScore = score;
-                best = player;
-            }
-        }
-
-        return best;
+        if (mc.crosshairPickEntity instanceof Player player && isValidTarget(player)) return player;
+        return null;
     }
 
     private boolean isValidTarget(Player player) {
@@ -279,19 +222,9 @@ public class TriggerBot extends Module {
         if (player.isSpectator()) return false;
         if (ignoreInvisible.get() && player.isInvisible()) return false;
         if (ignoreFriends.get() && Friends.get().isFriend(player)) return false;
-        if (mc.player.distanceTo(player) > range.get()) return false;
-        if (onlyTargetOnGround.get() && !player.onGround()) return false;
-        if (targetMode.get() != TargetMode.Crosshair && checkLineOfSight.get() && !canSee(player)) return false;
-        return true;
-    }
-
-    private boolean canSee(Player player) {
-        BlockHitResult hit = mc.level.clip(new ClipContext(
-            mc.player.getEyePosition(), player.getEyePosition(),
-            ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player
-        ));
-
-        return hit.getType() == HitResult.Type.MISS;
+        double reach = Math.min(range.get(), mc.player.entityInteractionRange());
+        if (mc.player.distanceTo(player) > reach) return false;
+        return !onlyTargetOnGround.get() || player.onGround();
     }
 
     private int randomDelay() {
@@ -305,11 +238,5 @@ public class TriggerBot extends Module {
         mc.gameMode.attack(mc.player, player);
 
         if (swing.get()) SwingUtils.swing(InteractionHand.MAIN_HAND);
-    }
-
-    public enum TargetMode {
-        Crosshair,
-        Nearest,
-        LowestHealth
     }
 }

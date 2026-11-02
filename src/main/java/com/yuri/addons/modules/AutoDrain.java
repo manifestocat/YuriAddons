@@ -1,6 +1,7 @@
 package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;
+import com.yuri.addons.utils.InteractionUtils;
 import com.yuri.addons.utils.ScreenUtils;
 import meteordevelopment.meteorclient.events.entity.player.InteractItemEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
@@ -34,14 +35,11 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SpongeBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -184,14 +182,14 @@ public class AutoDrain extends Module {
 
     private final Setting<Boolean> customRange = sgTargeting.add(new BoolSetting.Builder()
         .name("custom-range")
-        .description("Use a custom interaction range instead of the vanilla block interaction range.")
+        .description("Use a custom maximum interaction range, capped at the vanilla block interaction range.")
         .defaultValue(false)
         .build()
     );
 
     private final Setting<Double> range = sgTargeting.add(new DoubleSetting.Builder()
         .name("range")
-        .description("Custom interaction range.")
+        .description("Custom interaction range, capped at the vanilla block interaction range.")
         .defaultValue(4.5)
         .min(0)
         .sliderRange(0, 6)
@@ -213,13 +211,6 @@ public class AutoDrain extends Module {
         .min(1)
         .sliderRange(1, 16)
         .visible(() -> sortMode.get() == SortMode.ClosestEnemy || sortMode.get() == SortMode.EnemyFeet)
-        .build()
-    );
-
-    private final Setting<Boolean> checkLineOfSight = sgTargeting.add(new BoolSetting.Builder()
-        .name("check-line-of-sight")
-        .description("Only target water that is not hidden behind solid blocks.")
-        .defaultValue(true)
         .build()
     );
 
@@ -539,13 +530,11 @@ public class AutoDrain extends Module {
         if (Math.abs(pos.getY() - mc.player.blockPosition().getY()) > verticalRadius.get()) return false;
 
         Vec3 center = Vec3.atCenterOf(pos);
-        double reach = customRange.get() ? range.get() : mc.player.blockInteractionRange();
+        double reach = Math.min(customRange.get() ? range.get() : mc.player.blockInteractionRange(), mc.player.blockInteractionRange());
         if (mc.player.getEyePosition().distanceToSqr(center) > reach * reach) return false;
 
-        if (checkLineOfSight.get() && !canSee(pos, center)) return false;
+        if (!canInteractWith(pos)) return false;
 
-        
-        
         if (onlyEnemyPlaced.get() && trackedWater == null && nearestEnemy(pos, ownerRange.get()) == null) return false;
 
         if (ignoreSelf.get()) {
@@ -603,13 +592,19 @@ public class AutoDrain extends Module {
         return target.distanceToSqr(Vec3.atCenterOf(pos));
     }
 
-    private boolean canSee(BlockPos pos, Vec3 center) {
-        BlockHitResult hit = mc.level.clip(new ClipContext(
-            mc.player.getEyePosition(), center, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player
-        ));
+    private boolean canInteractWith(BlockPos pos) {
+        double maxRange = customRange.get() ? range.get() : mc.player.blockInteractionRange();
 
-        if (hit.getType() == HitResult.Type.MISS) return true;
-        return hit.getBlockPos().equals(pos);
+        return switch (mode.get()) {
+            case Bucket -> InteractionUtils.canPickupWater(pos, maxRange);
+            case Block -> InteractionUtils.canPlaceAt(pos, checkEntities.get(), Blocks.OBSIDIAN, maxRange);
+            case Sponge -> InteractionUtils.canPlaceAt(pos, checkEntities.get(), Blocks.SPONGE, maxRange);
+            case Web -> InteractionUtils.canPlaceAt(pos, checkEntities.get(), Blocks.COBWEB, maxRange);
+            case Auto -> InteractionUtils.canPickupWater(pos, maxRange)
+                || InteractionUtils.canPlaceAt(pos, checkEntities.get(), Blocks.SPONGE, maxRange)
+                || InteractionUtils.canPlaceAt(pos, checkEntities.get(), Blocks.COBWEB, maxRange)
+                || InteractionUtils.canPlaceAt(pos, checkEntities.get(), Blocks.OBSIDIAN, maxRange);
+        };
     }
 
     private Player nearestPlayer(BlockPos pos, double maxDistance) {
