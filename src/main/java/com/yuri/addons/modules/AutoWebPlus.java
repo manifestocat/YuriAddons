@@ -2,7 +2,8 @@ package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;
 import com.yuri.addons.utils.ScreenUtils;
-import meteordevelopment.meteorclient.events.entity.player.AttackEntityEvent;
+import com.yuri.addons.utils.WebUtils;
+import com.yuri.addons.utils.WebUtils.WebPosition;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -23,14 +24,9 @@ import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import meteordevelopment.orbit.EventHandler;
-import meteordevelopment.orbit.EventPriority;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -41,7 +37,6 @@ public class AutoWebPlus extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgTargeting = settings.createGroup("Targeting");
     private final SettingGroup sgPlacement = settings.createGroup("Placement");
-    private final SettingGroup sgHitWeb = settings.createGroup("Hit Web");
     private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Keybind> triggerKey = sgGeneral.add(new KeybindSetting.Builder()
@@ -241,33 +236,6 @@ public class AutoWebPlus extends Module {
         .build()
     );
 
-    private final Setting<Boolean> hitWeb = sgHitWeb.add(new BoolSetting.Builder()
-        .name("hit-web")
-        .description("Place a web on a player immediately after you hit them.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Double> hitWebChance = sgHitWeb.add(new DoubleSetting.Builder()
-        .name("hit-web-chance")
-        .description("Chance percentage that a hit places a web.")
-        .defaultValue(35.0)
-        .min(0)
-        .sliderRange(0, 100)
-        .visible(hitWeb::get)
-        .build()
-    );
-
-    private final Setting<Integer> hitWebCooldown = sgHitWeb.add(new IntSetting.Builder()
-        .name("hit-web-cooldown")
-        .description("Minimum time between hit-triggered webs in milliseconds.")
-        .defaultValue(250)
-        .min(0)
-        .sliderRange(0, 2000)
-        .visible(hitWeb::get)
-        .build()
-    );
-
     private final Setting<Boolean> render = sgRender.add(new BoolSetting.Builder()
         .name("render")
         .description("Render the current web position.")
@@ -304,7 +272,6 @@ public class AutoWebPlus extends Module {
     private BlockPos previewPos;
     private PendingWeb pending;
     private long lastTrigger;
-    private long lastHitWeb;
     private long tick;
 
     public AutoWebPlus() {
@@ -320,7 +287,6 @@ public class AutoWebPlus extends Module {
         previewPos = null;
         pending = null;
         lastTrigger = 0;
-        lastHitWeb = 0;
         tick = 0;
 
         if (!triggerKey.get().isSet()) warning("Set trigger-key in Auto Web Plus settings.");
@@ -374,21 +340,24 @@ public class AutoWebPlus extends Module {
         }
 
         for (Player target : targets) {
-            if (placeOnTarget(target, false)) return;
+            if (placeOnTarget(target)) return;
         }
 
         fail("Could not place a web.");
     }
 
-    private boolean placeOnTarget(Player target, boolean instant) {
-        List<BlockPos> positions = getPlacePositions(target, !instant && predictMovement.get());
+    private boolean placeOnTarget(Player target) {
+        List<BlockPos> positions = WebUtils.getPlacePositions(
+            target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
+            airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+        );
         if (positions.isEmpty()) return false;
 
         BlockPos pos = positions.get(0);
         FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
         if (!web.found()) return false;
 
-        if (!instant && legitSwap.get() && web.isHotbar() && !web.isMainHand()) {
+        if (legitSwap.get() && web.isHotbar() && !web.isMainHand()) {
             int originalSlot = mc.player.getInventory().getSelectedSlot();
 
             if (InvUtils.swap(web.slot(), false)) {
@@ -403,31 +372,6 @@ public class AutoWebPlus extends Module {
         }
 
         return false;
-    }
-
-    @EventHandler(priority = EventPriority.LOW)
-    private void onAttack(AttackEntityEvent event) {
-        if (!hitWeb.get() || event.isCancelled()) return;
-        if (!Utils.canUpdate()) return;
-        if (pending != null) return;
-        if (pauseInGui.get() && ScreenUtils.isOpen()) return;
-        if (!(event.entity instanceof Player target) || target == mc.player) return;
-        if (!isHitWebTarget(target)) return;
-        if (Math.random() * 100.0 >= hitWebChance.get()) return;
-
-        long now = System.currentTimeMillis();
-        if (now - lastHitWeb < hitWebCooldown.get()) return;
-        lastHitWeb = now;
-
-        placeOnTarget(target, true);
-    }
-
-    private boolean isHitWebTarget(Player target) {
-        if (!target.isAlive() || target.isDeadOrDying() || target.isSpectator()) return false;
-        if (ignoreInvisible.get() && target.isInvisible()) return false;
-        if (ignoreFriends.get() && Friends.get().isFriend(target)) return false;
-        if (mc.player.distanceTo(target) > targetRange.get()) return false;
-        return !onlyTargetOnGround.get() || target.onGround();
     }
 
     private void handlePending() {
@@ -446,7 +390,10 @@ public class AutoWebPlus extends Module {
                 return;
             }
 
-            List<BlockPos> positions = getPlacePositions(pending.target);
+            List<BlockPos> positions = WebUtils.getPlacePositions(
+                pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
+                airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+            );
             if (positions.isEmpty()) {
                 cancelPending(true);
                 fail("Could not place a web.");
@@ -498,7 +445,10 @@ public class AutoWebPlus extends Module {
         List<Player> targets = collectTargets();
 
         for (Player target : targets) {
-            List<BlockPos> positions = getPlacePositions(target);
+            List<BlockPos> positions = WebUtils.getPlacePositions(
+                target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
+                airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
+            );
             if (!positions.isEmpty()) {
                 previewTarget = target;
                 previewPos = positions.get(0);
@@ -557,62 +507,6 @@ public class AutoWebPlus extends Module {
         return mc.player.getViewVector(1.0F).dot(direction.normalize());
     }
 
-    private List<BlockPos> getPlacePositions(Player target) {
-        return getPlacePositions(target, predictMovement.get());
-    }
-
-    private List<BlockPos> getPlacePositions(Player target, boolean predict) {
-        List<BlockPos> positions = new ArrayList<>(4);
-
-        Vec3 base = target.position();
-
-        if (predict) {
-            double ticks = predictionTicks.get();
-            double dx = target.getX() - target.xo;
-            double dy = target.getY() - target.yo;
-            double dz = target.getZ() - target.zo;
-            base = base.add(dx * ticks, dy * ticks, dz * ticks);
-        }
-
-        BlockPos feet = BlockPos.containing(base);
-        BlockPos actualFeet = target.blockPosition();
-
-        if (webPosition.get() == WebPosition.Feet || webPosition.get() == WebPosition.Both) {
-            addPlacePosition(positions, feet);
-            addPlacePosition(positions, actualFeet);
-        }
-
-        if (webPosition.get() == WebPosition.Head || webPosition.get() == WebPosition.Both) {
-            BlockPos head = BlockPos.containing(base.add(0, target.getBbHeight() * 0.75, 0));
-            addPlacePosition(positions, head);
-            addPlacePosition(positions, actualFeet.above());
-        }
-
-        return positions;
-    }
-
-    private void addPlacePosition(List<BlockPos> positions, BlockPos pos) {
-        if (pos == null || positions.contains(pos)) return;
-        if (canPlaceWeb(pos)) positions.add(pos);
-    }
-
-    private boolean canPlaceWeb(BlockPos pos) {
-        if (!BlockUtils.canPlaceBlock(pos, checkEntities.get(), Blocks.COBWEB)) return false;
-        if (!airPlace.get() && BlockUtils.getPlaceSide(pos) == null) return false;
-        if (mc.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos)) > placeRange.get() * placeRange.get()) return false;
-        return !checkLineOfSight.get() || canSee(pos);
-    }
-
-    private boolean canSee(BlockPos pos) {
-        BlockHitResult hit = mc.level.clip(new ClipContext(
-            mc.player.getEyePosition(), Vec3.atCenterOf(pos),
-            ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player
-        ));
-
-        if (hit.getType() == HitResult.Type.MISS) return true;
-        return hit.getBlockPos().equals(pos);
-    }
-
     private void fail(String message) {
         if (notifyFailures.get()) warning(message);
     }
@@ -635,11 +529,5 @@ public class AutoWebPlus extends Module {
         Crosshair,
         Nearest,
         LowestHealth
-    }
-
-    public enum WebPosition {
-        Feet,
-        Head,
-        Both
     }
 }

@@ -4,6 +4,8 @@ import com.mojang.logging.LogUtils;
 import com.yuri.addons.modules.AimAssistPlus;
 import com.yuri.addons.modules.AutoDrain;
 import com.yuri.addons.modules.AutoWebPlus;
+import com.yuri.addons.modules.HitWeb;
+import com.yuri.addons.modules.TriggerBot;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
@@ -26,6 +28,8 @@ public class YuriAddons extends MeteorAddon {
         Modules.get().add(new AimAssistPlus());
         Modules.get().add(new AutoDrain());
         Modules.get().add(new AutoWebPlus());
+        Modules.get().add(new HitWeb());
+        Modules.get().add(new TriggerBot());
     }
 
     @Override
