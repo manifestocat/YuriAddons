@@ -1,6 +1,7 @@
 package com.yuri.addons;
 
 import com.mojang.logging.LogUtils;
+import com.yuri.addons.modules.AimAssistPlus;
 import com.yuri.addons.modules.AutoDrain;
 import com.yuri.addons.modules.AutoWebPlus;
 import meteordevelopment.meteorclient.addons.GithubRepo;
@@ -22,6 +23,7 @@ public class YuriAddons extends MeteorAddon {
     public void onInitialize() {
         LOG.info("Initializing Yuri Addons");
 
+        Modules.get().add(new AimAssistPlus());
         Modules.get().add(new AutoDrain());
         Modules.get().add(new AutoWebPlus());
     }
