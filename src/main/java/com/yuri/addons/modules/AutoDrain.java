@@ -1,13 +1,5 @@
 
-
 package com.yuri.addons.modules;
-
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 
 import com.yuri.addons.YuriAddons;
 import com.yuri.addons.utils.ScreenUtils;
@@ -53,6 +45,12 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 public class AutoDrain extends Module {
     private static final int WARN_INTERVAL = 100;
