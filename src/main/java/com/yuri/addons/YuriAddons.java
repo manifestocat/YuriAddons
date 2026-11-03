@@ -5,6 +5,7 @@ import com.yuri.addons.modules.AimAssistPlus;
 import com.yuri.addons.modules.AutoDrain;
 import com.yuri.addons.modules.AutoWebPlus;
 import com.yuri.addons.modules.HitWeb;
+import com.yuri.addons.modules.SmoothRotations;
 import com.yuri.addons.modules.TriggerBot;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
@@ -29,6 +30,7 @@ public class YuriAddons extends MeteorAddon {
         Modules.get().add(new AutoDrain());
         Modules.get().add(new AutoWebPlus());
         Modules.get().add(new HitWeb());
+        Modules.get().add(new SmoothRotations());
         Modules.get().add(new TriggerBot());
     }
 

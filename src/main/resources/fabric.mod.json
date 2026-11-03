@@ -17,6 +17,9 @@
       "com.yuri.addons.YuriAddons"
     ]
   },
+  "mixins": [
+    "yuri-addons.mixins.json"
+  ],
   "custom": {
     "meteor-client:color": "0,200,255",
     "modmenu": {
