@@ -40,7 +40,7 @@ public class HitWeb extends Module {
     private final Setting<Double> chance = sgGeneral.add(new DoubleSetting.Builder()
         .name("chance")
         .description("Chance percentage that a hit places a web.")
-        .defaultValue(25.0)
+        .defaultValue(100.0)
         .min(0)
         .sliderRange(0, 100)
         .build()
@@ -90,7 +90,7 @@ public class HitWeb extends Module {
     private final Setting<Boolean> notifyFailures = sgGeneral.add(new BoolSetting.Builder()
         .name("notify-failures")
         .description("Show a chat message when a hit web could not be placed.")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
