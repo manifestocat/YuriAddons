@@ -2,6 +2,7 @@ package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;
 import com.yuri.addons.utils.ScreenUtils;
+import com.yuri.addons.utils.WebPlacement;
 import com.yuri.addons.utils.WebUtils;
 import com.yuri.addons.utils.WebUtils.WebPosition;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
@@ -371,10 +372,12 @@ public class AutoWebPlus extends Module {
         if (!pending.placed) {
             if (tick < pending.placeAtTick) return;
 
-            if (!Utils.canUpdate() || !pending.target.isAlive()) {
+            if (tick - pending.placeAtTick > 100 || !Utils.canUpdate() || !pending.target.isAlive()) {
                 cancelPending(true);
                 return;
             }
+
+            if (pending.scheduled) return;
 
             List<BlockPos> positions = WebUtils.getPlacePositions(
                 pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
@@ -393,11 +396,25 @@ public class AutoWebPlus extends Module {
                 return;
             }
 
-            if (BlockUtils.place(positions.get(0), web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), false)) {
-                pending.placed = true;
-                pending.restoreAtTick = tick + Math.max(0, swapBackDelay.get());
+            BlockPos pos = positions.get(0);
+            PendingWeb task = pending;
 
-                if (notify.get()) info("Webbed %s.", pending.target.getName().getString());
+            if (!WebPlacement.place(pos, web, rotate.get(), rotationPriority.get(), checkEntities.get(), placeRange.get(),
+                () -> pending == task && Utils.canUpdate() && task.target.isAlive(),
+                success -> {
+                    if (pending != task) return;
+
+                    if (success) {
+                        task.placed = true;
+                        task.restoreAtTick = tick + Math.max(0, swapBackDelay.get());
+
+                        if (notify.get()) info("Webbed %s.", task.target.getName().getString());
+                    } else {
+                        cancelPending(true);
+                        fail("Could not place a web.");
+                    }
+                })) {
+                task.scheduled = true;
             } else {
                 cancelPending(true);
                 fail("Could not place a web.");
@@ -503,6 +520,7 @@ public class AutoWebPlus extends Module {
         final long placeAtTick;
         long restoreAtTick;
         boolean placed;
+        boolean scheduled;
 
         PendingWeb(Player target, int originalSlot, long placeAtTick) {
             this.target = target;

@@ -23,22 +23,18 @@ public final class InteractionUtils {
         Direction side = BlockUtils.getPlaceSide(pos);
         if (side == null) return false;
 
-        Vec3 hitPos = Vec3.atCenterOf(pos).add(
-            side.getStepX() * 0.5,
-            side.getStepY() * 0.5,
-            side.getStepZ() * 0.5
-        );
-
+        Vec3 eye = mc.player.getEyePosition();
+        Vec3 center = Vec3.atCenterOf(pos);
         double range = Math.min(maxRange, mc.player.blockInteractionRange());
-        if (mc.player.getEyePosition().distanceToSqr(hitPos) > range * range) return false;
+        if (eye.distanceToSqr(center) > range * range) return false;
 
-        BlockPos support = pos.relative(side);
         BlockHitResult hit = mc.level.clip(new ClipContext(
-            mc.player.getEyePosition(), hitPos,
+            eye, center,
             ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player
         ));
 
-        return hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(support);
+        if (hit.getType() != HitResult.Type.BLOCK) return true;
+        return hit.getLocation().distanceToSqr(eye) >= center.distanceToSqr(eye) - 1.0E-4;
     }
 
     public static boolean canPickupWater(BlockPos pos, double maxRange) {

@@ -3,6 +3,7 @@ package com.yuri.addons.modules;
 import com.yuri.addons.YuriAddons;
 import com.yuri.addons.utils.InteractionUtils;
 import com.yuri.addons.utils.ScreenUtils;
+import com.yuri.addons.utils.WebPlacement;
 import com.yuri.addons.utils.WebUtils;
 import com.yuri.addons.utils.WebUtils.WebPosition;
 import meteordevelopment.meteorclient.events.entity.player.AttackEntityEvent;
@@ -22,7 +23,6 @@ import meteordevelopment.meteorclient.utils.Utils;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
 import net.minecraft.core.BlockPos;
@@ -325,13 +325,11 @@ public class HitWeb extends Module {
         int originalSlot = -1;
         int swapTicks = 0;
 
-        if (legitSwap.get() && web.isHotbar() && !web.isMainHand()) {
+        if (web.isHotbar() && !web.isMainHand()) {
             originalSlot = mc.player.getInventory().getSelectedSlot();
 
-            if (InvUtils.swap(web.slot(), false)) {
+            if (legitSwap.get() && InvUtils.swap(web.slot(), false)) {
                 swapTicks = Math.max(1, swapDelay.get());
-            } else {
-                originalSlot = -1;
             }
         }
 
@@ -350,10 +348,12 @@ public class HitWeb extends Module {
         if (!pending.placed) {
             if (tick < pending.placeAtTick) return;
 
-            if (!Utils.canUpdate() || !pending.target.isAlive()) {
+            if (tick - pending.placeAtTick > 100 || !Utils.canUpdate() || !pending.target.isAlive()) {
                 cancelPending(true);
                 return;
             }
+
+            if (pending.scheduled) return;
 
             List<BlockPos> positions = WebUtils.getPlacePositions(
                 pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
@@ -374,15 +374,26 @@ public class HitWeb extends Module {
             }
 
             BlockPos pos = positions.get(0);
+            PendingHit task = pending;
 
-            boolean alreadySwapped = pending.originalSlot >= 0;
-            if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), !alreadySwapped && swapBack.get())) {
-                pending.placed = true;
-                pending.restoreAtTick = tick + Math.max(0, swapBackDelay.get());
-                renderPos = pos;
-                renderUntil = tick + renderTime.get();
+            if (!WebPlacement.place(pos, web, rotate.get(), rotationPriority.get(), checkEntities.get(), placeRange.get(),
+                () -> pending == task && Utils.canUpdate() && task.target.isAlive(),
+                success -> {
+                    if (pending != task) return;
 
-                if (notify.get()) info("Webbed %s.", pending.target.getName().getString());
+                    if (success) {
+                        task.placed = true;
+                        task.restoreAtTick = tick + Math.max(0, swapBackDelay.get());
+                        renderPos = pos;
+                        renderUntil = tick + renderTime.get();
+
+                        if (notify.get()) info("Webbed %s.", task.target.getName().getString());
+                    } else {
+                        cancelPending(true);
+                        fail("Could not place a web.");
+                    }
+                })) {
+                task.scheduled = true;
             } else {
                 cancelPending(true);
                 fail("Could not place a web.");
@@ -438,6 +449,7 @@ public class HitWeb extends Module {
         final long placeAtTick;
         long restoreAtTick;
         boolean placed;
+        boolean scheduled;
 
         PendingHit(Player target, int originalSlot, long placeAtTick) {
             this.target = target;
