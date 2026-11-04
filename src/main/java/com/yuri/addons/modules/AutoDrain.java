@@ -593,6 +593,8 @@ public class AutoDrain extends Module {
     }
 
     private boolean canInteractWith(BlockPos pos) {
+        if (InteractionUtils.isPlayerInWeb()) return false;
+
         double maxRange = customRange.get() ? range.get() : mc.player.blockInteractionRange();
 
         return switch (mode.get()) {

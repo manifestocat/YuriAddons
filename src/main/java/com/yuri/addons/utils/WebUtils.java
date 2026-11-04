@@ -13,7 +13,8 @@ public final class WebUtils {
     }
 
     public static List<BlockPos> getPlacePositions(Player target, WebPosition webPosition, boolean predict,
-                                                   int predictionTicks, boolean checkEntities, double placeRange) {
+                                                   int predictionTicks, boolean checkEntities, double placeRange,
+                                                   int fallbackDown) {
         List<BlockPos> positions = new ArrayList<>(4);
         Vec3 base = target.position();
 
@@ -31,6 +32,11 @@ public final class WebUtils {
         if (webPosition == WebPosition.Feet || webPosition == WebPosition.Both) {
             addPosition(positions, feet, checkEntities, placeRange);
             addPosition(positions, actualFeet, checkEntities, placeRange);
+
+            for (int i = 1; i <= fallbackDown; i++) {
+                addPosition(positions, feet.below(i), checkEntities, placeRange);
+                addPosition(positions, actualFeet.below(i), checkEntities, placeRange);
+            }
         }
 
         if (webPosition == WebPosition.Head || webPosition == WebPosition.Both) {

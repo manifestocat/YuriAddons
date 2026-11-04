@@ -13,20 +13,32 @@ import net.minecraft.world.phys.Vec3;
 import static meteordevelopment.meteorclient.MeteorClient.mc;
 
 public final class InteractionUtils {
+    public static String lastFailure = "";
+
     private InteractionUtils() {
     }
 
     public static boolean canPlaceAt(BlockPos pos, boolean checkEntities, Block block, double maxRange) {
-        if (!BlockUtils.canPlaceBlock(pos, checkEntities, block)) return false;
-        if (isPlayerInWeb()) return false;
+        lastFailure = "";
+
+        if (!BlockUtils.canPlaceBlock(pos, checkEntities, block)) {
+            lastFailure = "target block is not replaceable";
+            return false;
+        }
 
         Direction side = BlockUtils.getPlaceSide(pos);
-        if (side == null) return false;
+        if (side == null) {
+            lastFailure = "no solid support";
+            return false;
+        }
 
         Vec3 eye = mc.player.getEyePosition();
         Vec3 center = Vec3.atCenterOf(pos);
         double range = Math.min(maxRange, mc.player.blockInteractionRange());
-        if (eye.distanceToSqr(center) > range * range) return false;
+        if (eye.distanceToSqr(center) > range * range) {
+            lastFailure = "out of reach";
+            return false;
+        }
 
         BlockHitResult hit = mc.level.clip(new ClipContext(
             eye, center,
@@ -34,7 +46,13 @@ public final class InteractionUtils {
         ));
 
         if (hit.getType() != HitResult.Type.BLOCK) return true;
-        return hit.getLocation().distanceToSqr(eye) >= center.distanceToSqr(eye) - 1.0E-4;
+
+        if (hit.getLocation().distanceToSqr(eye) < center.distanceToSqr(eye) - 1.0E-4) {
+            lastFailure = "line of sight obstructed";
+            return false;
+        }
+
+        return true;
     }
 
     public static boolean canPickupWater(BlockPos pos, double maxRange) {

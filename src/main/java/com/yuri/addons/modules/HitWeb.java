@@ -147,6 +147,15 @@ public class HitWeb extends Module {
         .build()
     );
 
+    private final Setting<Integer> verticalFallback = sgPlacement.add(new IntSetting.Builder()
+        .name("vertical-fallback")
+        .description("How many blocks below the target to try when the target is jumping.")
+        .defaultValue(2)
+        .min(0)
+        .sliderRange(0, 5)
+        .build()
+    );
+
     private final Setting<Double> placeRange = sgPlacement.add(new DoubleSetting.Builder()
         .name("place-range")
         .description("Maximum distance from your eyes to the web position, capped at the vanilla block interaction range.")
@@ -309,11 +318,11 @@ public class HitWeb extends Module {
 
         List<BlockPos> positions = WebUtils.getPlacePositions(
             target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-            checkEntities.get(), placeRange.get()
+            checkEntities.get(), placeRange.get(), verticalFallback.get()
         );
 
         if (positions.isEmpty()) {
-            fail("Hit Web: no reachable support near the target.");
+            fail("Hit Web: no reachable support near the target (" + InteractionUtils.lastFailure + ").");
             return;
         }
 
@@ -358,7 +367,7 @@ public class HitWeb extends Module {
 
             List<BlockPos> positions = WebUtils.getPlacePositions(
                 pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-                checkEntities.get(), placeRange.get()
+                checkEntities.get(), placeRange.get(), verticalFallback.get()
             );
 
             BlockPos pos = positions.isEmpty() ? pending.pos : positions.get(0);
@@ -366,7 +375,7 @@ public class HitWeb extends Module {
             if (positions.isEmpty()
                 && !InteractionUtils.canPlaceAt(pending.pos, checkEntities.get(), Blocks.COBWEB, placeRange.get())) {
                 cancelPending(true);
-                fail("Hit Web: no valid web position.");
+                fail("Hit Web: no valid web position (" + InteractionUtils.lastFailure + ").");
                 return;
             }
 
@@ -399,7 +408,7 @@ public class HitWeb extends Module {
                 task.scheduled = true;
             } else {
                 cancelPending(true);
-                fail("Hit Web: placement validation failed.");
+                fail("Hit Web: placement validation failed (" + InteractionUtils.lastFailure + ").");
             }
 
             return;
