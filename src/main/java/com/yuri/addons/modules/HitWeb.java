@@ -1,9 +1,7 @@
 package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;
-import com.yuri.addons.utils.InteractionUtils;
 import com.yuri.addons.utils.ScreenUtils;
-import com.yuri.addons.utils.WebPlacement;
 import com.yuri.addons.utils.WebUtils;
 import com.yuri.addons.utils.WebUtils.WebPosition;
 import meteordevelopment.meteorclient.events.entity.player.AttackEntityEvent;
@@ -23,12 +21,12 @@ import meteordevelopment.meteorclient.utils.Utils;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
+import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Blocks;
 
 import java.util.List;
 
@@ -50,27 +48,9 @@ public class HitWeb extends Module {
     private final Setting<Integer> cooldown = sgGeneral.add(new IntSetting.Builder()
         .name("cooldown-ms")
         .description("Minimum time between hit-triggered webs in milliseconds.")
-        .defaultValue(300)
+        .defaultValue(250)
         .min(0)
         .sliderRange(0, 2000)
-        .build()
-    );
-
-    private final Setting<Integer> reactionDelayMin = sgGeneral.add(new IntSetting.Builder()
-        .name("reaction-delay-min")
-        .description("Minimum human-like delay after a hit before placing in milliseconds.")
-        .defaultValue(30)
-        .min(0)
-        .sliderRange(0, 500)
-        .build()
-    );
-
-    private final Setting<Integer> reactionDelayMax = sgGeneral.add(new IntSetting.Builder()
-        .name("reaction-delay-max")
-        .description("Maximum human-like delay after a hit before placing in milliseconds.")
-        .defaultValue(90)
-        .min(0)
-        .sliderRange(0, 500)
         .build()
     );
 
@@ -105,7 +85,7 @@ public class HitWeb extends Module {
     private final Setting<Boolean> ignoreInvisible = sgTargeting.add(new BoolSetting.Builder()
         .name("ignore-invisible")
         .description("Do not web invisible players.")
-        .defaultValue(true)
+        .defaultValue(false)
         .build()
     );
 
@@ -116,10 +96,24 @@ public class HitWeb extends Module {
         .build()
     );
 
+    private final Setting<Boolean> checkLineOfSight = sgTargeting.add(new BoolSetting.Builder()
+        .name("check-line-of-sight")
+        .description("Only place webs that are visible from your eyes.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<WebPosition> webPosition = sgPlacement.add(new EnumSetting.Builder<WebPosition>()
         .name("web-position")
         .description("Where to place the web relative to the target.")
         .defaultValue(WebPosition.Feet)
+        .build()
+    );
+
+    private final Setting<Boolean> airPlace = sgPlacement.add(new BoolSetting.Builder()
+        .name("air-place")
+        .description("Allow placing webs without a solid block next to the position.")
+        .defaultValue(false)
         .build()
     );
 
@@ -147,18 +141,9 @@ public class HitWeb extends Module {
         .build()
     );
 
-    private final Setting<Integer> verticalFallback = sgPlacement.add(new IntSetting.Builder()
-        .name("vertical-fallback")
-        .description("How many blocks below the target to try when the target is jumping.")
-        .defaultValue(2)
-        .min(0)
-        .sliderRange(0, 5)
-        .build()
-    );
-
     private final Setting<Double> placeRange = sgPlacement.add(new DoubleSetting.Builder()
         .name("place-range")
-        .description("Maximum distance from your eyes to the web position, capped at the vanilla block interaction range.")
+        .description("Maximum distance from your eyes to the web position.")
         .defaultValue(4.5)
         .min(0)
         .sliderRange(0, 6)
@@ -185,33 +170,6 @@ public class HitWeb extends Module {
         .name("swap-back")
         .description("Return to the previously selected hotbar slot after placing.")
         .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Boolean> legitSwap = sgPlacement.add(new BoolSetting.Builder()
-        .name("legit-swap")
-        .description("Visibly select the web hotbar slot before placing.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Integer> swapDelay = sgPlacement.add(new IntSetting.Builder()
-        .name("swap-delay")
-        .description("Ticks to hold the web slot before placing.")
-        .defaultValue(2)
-        .min(1)
-        .sliderRange(1, 10)
-        .visible(legitSwap::get)
-        .build()
-    );
-
-    private final Setting<Integer> swapBackDelay = sgPlacement.add(new IntSetting.Builder()
-        .name("swap-back-delay")
-        .description("Ticks to wait after placing before swapping back.")
-        .defaultValue(2)
-        .min(0)
-        .sliderRange(0, 10)
-        .visible(() -> legitSwap.get() && swapBack.get())
         .build()
     );
 
@@ -260,7 +218,6 @@ public class HitWeb extends Module {
     private long renderUntil;
     private long tick;
     private long lastHit;
-    private PendingHit pending;
 
     public HitWeb() {
         super(YuriAddons.CATEGORY, "hit-web",
@@ -274,14 +231,12 @@ public class HitWeb extends Module {
         renderUntil = 0;
         tick = 0;
         lastHit = 0;
-        pending = null;
     }
 
     @Override
     public void onDeactivate() {
         renderPos = null;
         renderUntil = 0;
-        cancelPending(true);
     }
 
     @Override
@@ -292,7 +247,6 @@ public class HitWeb extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         tick++;
-        handlePending();
 
         if (renderPos != null && tick > renderUntil) renderPos = null;
     }
@@ -300,7 +254,6 @@ public class HitWeb extends Module {
     @EventHandler(priority = EventPriority.LOW)
     private void onAttack(AttackEntityEvent event) {
         if (!Utils.canUpdate() || event.isCancelled()) return;
-        if (pending != null) return;
         if (pauseInGui.get() && ScreenUtils.isOpen()) return;
         if (!(event.entity instanceof Player target) || target == mc.player) return;
         if (!isValidTarget(target)) return;
@@ -310,19 +263,13 @@ public class HitWeb extends Module {
         if (now - lastHit < cooldown.get()) return;
         lastHit = now;
 
-        startHitWeb(target);
-    }
-
-    private void startHitWeb(Player target) {
-        if (InteractionUtils.isPlayerInWeb()) return;
-
         List<BlockPos> positions = WebUtils.getPlacePositions(
             target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-            checkEntities.get(), placeRange.get(), verticalFallback.get()
+            airPlace.get(), checkEntities.get(), placeRange.get(), checkLineOfSight.get()
         );
 
         if (positions.isEmpty()) {
-            fail("Hit Web: no reachable support near the target (" + InteractionUtils.lastFailure + ").");
+            fail("Could not place a web.");
             return;
         }
 
@@ -332,109 +279,16 @@ public class HitWeb extends Module {
             return;
         }
 
-        int originalSlot = -1;
-        int swapTicks = 0;
+        BlockPos pos = positions.get(0);
 
-        if (web.isHotbar() && !web.isMainHand()) {
-            originalSlot = mc.player.getInventory().getSelectedSlot();
+        if (BlockUtils.place(pos, web, rotate.get(), rotationPriority.get(), true, checkEntities.get(), swapBack.get())) {
+            renderPos = pos;
+            renderUntil = tick + renderTime.get();
 
-            if (legitSwap.get() && InvUtils.swap(web.slot(), false)) {
-                swapTicks = Math.max(1, swapDelay.get());
-            }
+            if (notify.get()) info("Webbed %s.", target.getName().getString());
+        } else {
+            fail("Could not place a web.");
         }
-
-        int reactionTicks = (randomReactionDelay() + 49) / 50;
-        pending = new PendingHit(target, positions.get(0), originalSlot, tick + reactionTicks + swapTicks);
-    }
-
-    private void handlePending() {
-        if (pending == null) return;
-
-        if (pauseInGui.get() && ScreenUtils.isOpen()) {
-            cancelPending(true);
-            return;
-        }
-
-        if (!pending.placed) {
-            if (tick < pending.placeAtTick) return;
-
-            if (tick - pending.placeAtTick > 100 || !Utils.canUpdate() || !pending.target.isAlive()) {
-                cancelPending(true);
-                return;
-            }
-
-            if (pending.scheduled) return;
-
-            List<BlockPos> positions = WebUtils.getPlacePositions(
-                pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
-                checkEntities.get(), placeRange.get(), verticalFallback.get()
-            );
-
-            BlockPos pos = positions.isEmpty() ? pending.pos : positions.get(0);
-
-            if (positions.isEmpty()
-                && !InteractionUtils.canPlaceAt(pending.pos, checkEntities.get(), Blocks.COBWEB, placeRange.get())) {
-                cancelPending(true);
-                fail("Hit Web: no valid web position (" + InteractionUtils.lastFailure + ").");
-                return;
-            }
-
-            FindItemResult web = InvUtils.findInHotbar(Items.COBWEB);
-            if (!web.found()) {
-                cancelPending(true);
-                fail("No cobwebs in your hotbar or offhand.");
-                return;
-            }
-
-            PendingHit task = pending;
-
-            if (!WebPlacement.place(pos, web, rotate.get(), rotationPriority.get(), checkEntities.get(), placeRange.get(),
-                () -> pending == task && Utils.canUpdate() && task.target.isAlive(),
-                success -> {
-                    if (pending != task) return;
-
-                    if (success) {
-                        task.placed = true;
-                        task.restoreAtTick = tick + Math.max(0, swapBackDelay.get());
-                        renderPos = pos;
-                        renderUntil = tick + renderTime.get();
-
-                        if (notify.get()) info("Webbed %s.", task.target.getName().getString());
-                    } else {
-                        cancelPending(true);
-                        fail("Hit Web: interaction was rejected.");
-                    }
-                })) {
-                task.scheduled = true;
-            } else {
-                cancelPending(true);
-                fail("Hit Web: placement validation failed (" + InteractionUtils.lastFailure + ").");
-            }
-
-            return;
-        }
-
-        if (tick >= pending.restoreAtTick) {
-            if (swapBack.get() && pending.originalSlot >= 0) InvUtils.swap(pending.originalSlot, false);
-            pending = null;
-        }
-    }
-
-    private int randomReactionDelay() {
-        int min = reactionDelayMin.get();
-        int max = reactionDelayMax.get();
-        if (max < min) max = min;
-        return min + (int) (Math.random() * (max - min + 1));
-    }
-
-    private void cancelPending(boolean restore) {
-        if (pending == null) return;
-
-        if (restore && pending.originalSlot >= 0 && mc.player != null) {
-            InvUtils.swap(pending.originalSlot, false);
-        }
-
-        pending = null;
     }
 
     @EventHandler
@@ -453,22 +307,5 @@ public class HitWeb extends Module {
 
     private void fail(String message) {
         if (notifyFailures.get()) warning(message);
-    }
-
-    private static final class PendingHit {
-        final Player target;
-        final BlockPos pos;
-        final int originalSlot;
-        final long placeAtTick;
-        long restoreAtTick;
-        boolean placed;
-        boolean scheduled;
-
-        PendingHit(Player target, BlockPos pos, int originalSlot, long placeAtTick) {
-            this.target = target;
-            this.pos = pos;
-            this.originalSlot = originalSlot;
-            this.placeAtTick = placeAtTick;
-        }
     }
 }
