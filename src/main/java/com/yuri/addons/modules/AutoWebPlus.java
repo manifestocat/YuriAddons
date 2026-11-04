@@ -1,6 +1,7 @@
 package com.yuri.addons.modules;
 
 import com.yuri.addons.YuriAddons;
+import com.yuri.addons.utils.InteractionUtils;
 import com.yuri.addons.utils.ScreenUtils;
 import com.yuri.addons.utils.WebPlacement;
 import com.yuri.addons.utils.WebUtils;
@@ -28,6 +29,7 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -348,7 +350,7 @@ public class AutoWebPlus extends Module {
             int originalSlot = mc.player.getInventory().getSelectedSlot();
 
             if (InvUtils.swap(web.slot(), false)) {
-                pending = new PendingWeb(target, originalSlot, tick + Math.max(1, swapDelay.get()));
+                pending = new PendingWeb(target, pos, originalSlot, tick + Math.max(1, swapDelay.get()));
                 return true;
             }
         }
@@ -383,9 +385,13 @@ public class AutoWebPlus extends Module {
                 pending.target, webPosition.get(), predictMovement.get(), predictionTicks.get(),
                 checkEntities.get(), placeRange.get()
             );
-            if (positions.isEmpty()) {
+
+            BlockPos pos = positions.isEmpty() ? pending.pos : positions.get(0);
+
+            if (positions.isEmpty()
+                && !InteractionUtils.canPlaceAt(pending.pos, checkEntities.get(), Blocks.COBWEB, placeRange.get())) {
                 cancelPending(true);
-                fail("Could not place a web.");
+                fail("Auto Web: no valid web position.");
                 return;
             }
 
@@ -396,7 +402,6 @@ public class AutoWebPlus extends Module {
                 return;
             }
 
-            BlockPos pos = positions.get(0);
             PendingWeb task = pending;
 
             if (!WebPlacement.place(pos, web, rotate.get(), rotationPriority.get(), checkEntities.get(), placeRange.get(),
@@ -411,13 +416,13 @@ public class AutoWebPlus extends Module {
                         if (notify.get()) info("Webbed %s.", task.target.getName().getString());
                     } else {
                         cancelPending(true);
-                        fail("Could not place a web.");
+                        fail("Auto Web: interaction was rejected.");
                     }
                 })) {
                 task.scheduled = true;
             } else {
                 cancelPending(true);
-                fail("Could not place a web.");
+                fail("Auto Web: placement validation failed.");
             }
 
             return;
@@ -516,14 +521,16 @@ public class AutoWebPlus extends Module {
 
     private static final class PendingWeb {
         final Player target;
+        final BlockPos pos;
         final int originalSlot;
         final long placeAtTick;
         long restoreAtTick;
         boolean placed;
         boolean scheduled;
 
-        PendingWeb(Player target, int originalSlot, long placeAtTick) {
+        PendingWeb(Player target, BlockPos pos, int originalSlot, long placeAtTick) {
             this.target = target;
+            this.pos = pos;
             this.originalSlot = originalSlot;
             this.placeAtTick = placeAtTick;
         }

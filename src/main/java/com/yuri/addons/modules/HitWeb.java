@@ -28,6 +28,7 @@ import meteordevelopment.orbit.EventPriority;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 
 import java.util.List;
 
@@ -312,7 +313,7 @@ public class HitWeb extends Module {
         );
 
         if (positions.isEmpty()) {
-            fail("Could not place a web.");
+            fail("Hit Web: no reachable support near the target.");
             return;
         }
 
@@ -334,7 +335,7 @@ public class HitWeb extends Module {
         }
 
         int reactionTicks = (randomReactionDelay() + 49) / 50;
-        pending = new PendingHit(target, originalSlot, tick + reactionTicks + swapTicks);
+        pending = new PendingHit(target, positions.get(0), originalSlot, tick + reactionTicks + swapTicks);
     }
 
     private void handlePending() {
@@ -360,9 +361,12 @@ public class HitWeb extends Module {
                 checkEntities.get(), placeRange.get()
             );
 
-            if (positions.isEmpty()) {
+            BlockPos pos = positions.isEmpty() ? pending.pos : positions.get(0);
+
+            if (positions.isEmpty()
+                && !InteractionUtils.canPlaceAt(pending.pos, checkEntities.get(), Blocks.COBWEB, placeRange.get())) {
                 cancelPending(true);
-                fail("Could not place a web.");
+                fail("Hit Web: no valid web position.");
                 return;
             }
 
@@ -373,7 +377,6 @@ public class HitWeb extends Module {
                 return;
             }
 
-            BlockPos pos = positions.get(0);
             PendingHit task = pending;
 
             if (!WebPlacement.place(pos, web, rotate.get(), rotationPriority.get(), checkEntities.get(), placeRange.get(),
@@ -390,13 +393,13 @@ public class HitWeb extends Module {
                         if (notify.get()) info("Webbed %s.", task.target.getName().getString());
                     } else {
                         cancelPending(true);
-                        fail("Could not place a web.");
+                        fail("Hit Web: interaction was rejected.");
                     }
                 })) {
                 task.scheduled = true;
             } else {
                 cancelPending(true);
-                fail("Could not place a web.");
+                fail("Hit Web: placement validation failed.");
             }
 
             return;
@@ -445,14 +448,16 @@ public class HitWeb extends Module {
 
     private static final class PendingHit {
         final Player target;
+        final BlockPos pos;
         final int originalSlot;
         final long placeAtTick;
         long restoreAtTick;
         boolean placed;
         boolean scheduled;
 
-        PendingHit(Player target, int originalSlot, long placeAtTick) {
+        PendingHit(Player target, BlockPos pos, int originalSlot, long placeAtTick) {
             this.target = target;
+            this.pos = pos;
             this.originalSlot = originalSlot;
             this.placeAtTick = placeAtTick;
         }

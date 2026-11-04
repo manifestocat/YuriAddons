@@ -25,8 +25,8 @@ public final class WebUtils {
             base = base.add(dx * ticks, dy * ticks, dz * ticks);
         }
 
-        BlockPos feet = BlockPos.containing(base);
-        BlockPos actualFeet = target.blockPosition();
+        BlockPos feet = BlockPos.containing(base.add(0, 0.01, 0));
+        BlockPos actualFeet = BlockPos.containing(target.getX(), target.getY() + 0.01, target.getZ());
 
         if (webPosition == WebPosition.Feet || webPosition == WebPosition.Both) {
             addPosition(positions, feet, checkEntities, placeRange);
